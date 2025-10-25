@@ -130,6 +130,44 @@ async function main() {
         mapping.title = mdnData.frontmatter.title;
         mapping.anchor = hasAnchor ? slugParts[1] : null;
         mapping.url = MDN_URL_ROOT + mdnData.frontmatter.slug + (hasAnchor ? `#${slugParts[1]}` : "");
+
+        // TODO: Augment MDN metadata with additional links from the "See more" section of the article
+        // Use the `slug` value to look up the article in the `../../content` repository
+        // Markdown appears as:
+        // ## See also
+        //- [`<input type="date">`](/en-US/docs/Web/HTML/Reference/Elements/input/date)
+        //- [`<input type="datetime-local">`](/en-US/docs/Web/HTML/Reference/Elements/input/datetime-local)
+        // Parse the markdown file to extract the "See more" section links
+        // Add those links to the mapping object under a new property, e.g., `seeAlsoLinks`
+        // Apply the following rules to convert the slug to the file path:
+        // - Lowercase the slug
+        // - Replace `::` with `_doublecolon_`
+        // - Replace `:` with `_colon_`
+        // - Replace `*` with `_star_`
+        mapping.seeAlsoLinks = [];
+        const filePath = mdnData.frontmatter.slug
+          .toLowerCase()
+          .replace(/::/g, "_doublecolon_")
+          .replace(/:/g, "_colon_")
+          .replace(/\*/g, "_star_");
+        const contentRepoPath = path.join(import.meta.dirname, "../../content/files/en-us/", filePath + "/index.md");
+        try {
+          const fileContent = await fs.readFile(contentRepoPath, "utf-8");
+          // Match 'See also' or 'See more', case-insensitive, flexible line endings
+          const seeAlsoSectionMatch = fileContent.match(/## (See also|See more)\s*\r?\n([\s\S]*?)(\n## |$)/i);
+          if (seeAlsoSectionMatch) {
+            // Only match external markdown links (http/https)
+            const links = seeAlsoSectionMatch[2].match(/- \[([^\]]+)\]\((https?:[^)]+)\)/g);
+            if (links) {
+              mapping.seeAlsoLinks = links.map(link => {
+                const match = link.match(/- \[([^\]]+)\]\((https?:[^)]+)\)/);
+                return { text: match[1], url: match[2] };
+              });
+            }
+          }
+        } catch (error) {
+          console.error(`Error reading content file at ${contentRepoPath}:`, error);
+        }
       }
     }
   }
